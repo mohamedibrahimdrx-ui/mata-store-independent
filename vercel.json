@@ -1,32 +1,28 @@
+
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
     "backend": {
       "root": "backend",
-      "framework": "express",
-      "entrypoint": "app.js"
+      "framework": "express"
     },
     "frontend": {
       "root": "frontend",
-      "framework": "vite",
-      "rewrites": [
-        { "source": "/admin", "destination": "/index.html" },
-        { "source": "/admin/", "destination": "/index.html" }
-      ],
-      "headers": [
-        {
-          "source": "/(.*)",
-          "headers": [
-            { "key": "X-Content-Type-Options", "value": "nosniff" },
-            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-            { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
-          ]
-        }
-      ]
+      "framework": "vite"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "backend" } },
-    { "source": "/(.*)", "destination": { "service": "frontend" } }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    }
   ]
 }
