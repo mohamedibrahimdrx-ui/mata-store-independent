@@ -1,0 +1,9 @@
+
+node_modules/
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+*-service-account*.json
+dist/
+coverage/

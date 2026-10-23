@@ -1,0 +1,79 @@
+import { useEffect, useMemo, useState } from 'react'
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { auth } from './firebase'
+import { adminRequest } from './api/admin'
+import './Admin.css'
+
+const categories = [['bags','شنط'],['wallets','محافظ'],['perfumes','عطور'],['accessories','إكسسوارات']]
+const statuses = [['pending','قيد المراجعة'],['confirmed','تم التأكيد'],['shipped','تم الشحن'],['delivered','تم التسليم'],['cancelled','ملغي']]
+const transitions = {pending:['confirmed','cancelled'],confirmed:['shipped','cancelled'],shipped:['delivered'],delivered:[],cancelled:[]}
+const labelStatus = s => statuses.find(([k])=>k===s)?.[1] || s || 'غير محدد'
+const money = n => `${Number(n||0).toLocaleString('ar-EG')} ج.م`
+const newProduct = () => ({name:'',description:'',price:1,category:'bags',image:'https://placehold.co/600x600/png',active:true,colors:[{id:'black',name:'أسود',hex:'#222222',stock:0,active:true}]})
+
+function ProductEditor({initial,onSave,onCancel,saving}) {
+  const [form,setForm] = useState(() => initial?.id ? {...initial, colors:(initial.colors||[]).map(c=>({...c}))} : newProduct())
+  const [error,setError] = useState('')
+  const set = (key,value) => setForm(old=>({...old,[key]:value}))
+  const colorSet = (i,key,value) => set('colors',form.colors.map((c,j)=>j===i?{...c,[key]:value}:c))
+  async function submit(e) {
+    e.preventDefault(); setError('')
+    const payload = {...form,price:Number(form.price),colors:form.colors.map(c=>({...c,stock:Number(c.stock)}))}
+    if(payload.name.trim().length<2) return setError('اسم المنتج لازم يكون حرفين على الأقل.')
+    if(!Number.isInteger(payload.price)||payload.price<1) return setError('السعر لازم يكون رقمًا صحيحًا موجبًا.')
+    if(!/^https?:\/\//i.test(payload.image)) return setError('أدخل رابط صورة صحيح يبدأ بـ http:// أو https://')
+    if(!payload.colors.length || payload.colors.some(c=>! /^[a-z0-9_-]{1,40}$/.test(c.id)||!c.name.trim()||!/^#[0-9a-fA-F]{6}$/.test(c.hex)||!Number.isInteger(c.stock)||c.stock<0)) return setError('راجع معرّفات الألوان وأسمائها وأكواد Hex والمخزون.')
+    if(new Set(payload.colors.map(c=>c.id)).size!==payload.colors.length) return setError('معرّفات الألوان لازم تكون مختلفة.')
+    try { await onSave(payload) } catch(err) { setError(err.message||'تعذر حفظ المنتج.') }
+  }
+  return <form className="ad-editor" onSubmit={submit}>
+    <div className="ad-row ad-between"><h2>{initial?.id?'تعديل منتج':'إضافة منتج'}</h2><button type="button" className="ad-btn" onClick={onCancel}>إلغاء</button></div>
+    <div className="ad-grid">
+      <label>اسم المنتج<input value={form.name} maxLength={120} onChange={e=>set('name',e.target.value)} required /></label>
+      <label>السعر بالجنيه<input type="number" min="1" step="1" value={form.price} onChange={e=>set('price',e.target.value)} required /></label>
+      <label>القسم<select value={form.category} onChange={e=>set('category',e.target.value)}>{categories.map(([v,t])=><option key={v} value={v}>{t}</option>)}</select></label>
+      <label>رابط الصورة<input type="url" value={form.image} onChange={e=>set('image',e.target.value)} required /></label>
+      <label className="ad-wide">الوصف<textarea rows="3" maxLength={2000} value={form.description||''} onChange={e=>set('description',e.target.value)} /></label>
+      <label className="ad-check"><input type="checkbox" checked={form.active!==false} onChange={e=>set('active',e.target.checked)} /> ظاهر في المتجر</label>
+    </div>
+    <div className="ad-row ad-between"><h3>الألوان والمخزون</h3><button type="button" className="ad-btn" disabled={form.colors.length>=30} onClick={()=>set('colors',[...form.colors,{id:'',name:'',hex:'#222222',stock:0,active:true}])}>+ لون</button></div>
+    {form.colors.map((c,i)=><div className="ad-color" key={i}>
+      <label>المعرّف<input value={c.id} onChange={e=>colorSet(i,'id',e.target.value.toLowerCase())} placeholder="black" required /></label>
+      <label>اسم اللون<input value={c.name} onChange={e=>colorSet(i,'name',e.target.value)} required /></label>
+      <label>Hex<input value={c.hex} onChange={e=>colorSet(i,'hex',e.target.value)} pattern="#[0-9a-fA-F]{6}" required /></label>
+      <label>المخزون<input type="number" min="0" step="1" value={c.stock} onChange={e=>colorSet(i,'stock',e.target.value)} required /></label>
+      <label className="ad-check"><input type="checkbox" checked={c.active!==false} onChange={e=>colorSet(i,'active',e.target.checked)} /> متاح</label>
+      <button type="button" className="ad-btn ad-danger" disabled={form.colors.length<=1} onClick={()=>set('colors',form.colors.filter((_,j)=>j!==i))}>حذف</button>
+    </div>)}
+    {error&&<p className="ad-error">{error}</p>}<button className="ad-btn ad-primary" disabled={saving}>{saving?'جارٍ الحفظ...':'حفظ المنتج'}</button>
+  </form>
+}
+
+export default function AdminApp() {
+  const [user,setUser] = useState(null), [authReady,setAuthReady] = useState(false)
+  const [email,setEmail] = useState(''), [password,setPassword] = useState('')
+  const [section,setSection] = useState('products'), [products,setProducts] = useState([]), [orders,setOrders] = useState([])
+  const [loading,setLoading] = useState(false), [saving,setSaving] = useState(false), [editing,setEditing] = useState(null)
+  const [notice,setNotice] = useState(''), [error,setError] = useState(''), [search,setSearch] = useState('')
+  useEffect(()=>onAuthStateChanged(auth,u=>{setUser(u);setAuthReady(true)}),[])
+  async function loadProducts(){const d=await adminRequest(user,'/api/admin/products');setProducts(Array.isArray(d.products)?d.products:[])}
+  async function loadOrders(){const d=await adminRequest(user,'/api/admin/orders?limit=100');setOrders(Array.isArray(d.orders)?d.orders:[])}
+  async function refresh(){if(!user)return;setLoading(true);setError('');try{await Promise.all([loadProducts(),loadOrders()])}catch(e){setError(e.message)}finally{setLoading(false)}}
+  useEffect(()=>{if(user)refresh()},[user])
+  async function login(e){e.preventDefault();setError('');try{await signInWithEmailAndPassword(auth,email.trim(),password);setPassword('')}catch{setError('تعذر الدخول. راجع البريد وكلمة المرور وتفعيل Email/Password في Firebase.')}}
+  async function saveProduct(payload){setSaving(true);try{if(editing?.id)await adminRequest(user,`/api/admin/products/${encodeURIComponent(editing.id)}`,{method:'PUT',body:JSON.stringify(payload)});else await adminRequest(user,'/api/admin/products',{method:'POST',body:JSON.stringify(payload)});setEditing(null);setNotice('تم حفظ المنتج.');await loadProducts()}finally{setSaving(false)}}
+  async function toggleProduct(p){setError('');try{await adminRequest(user,`/api/admin/products/${encodeURIComponent(p.id)}/active`,{method:'PATCH',body:JSON.stringify({active:p.active===false})});setNotice('تم تحديث حالة المنتج.');await loadProducts()}catch(e){setError(e.message)}}
+  async function changeStatus(order,status){if(!window.confirm(`تأكيد تغيير حالة الطلب إلى «${labelStatus(status)}»؟${status==='cancelled'?'\nسيحاول النظام إعادة المخزون.':''}`))return;try{await adminRequest(user,`/api/admin/orders/${encodeURIComponent(order.id)}/status`,{method:'PATCH',body:JSON.stringify({status})});setNotice('تم تحديث حالة الطلب.');await loadOrders()}catch(e){setError(e.message)}}
+  const filtered = useMemo(()=>products.filter(p=>`${p.name||''} ${p.category||''} ${p.id||''}`.toLowerCase().includes(search.toLowerCase())),[products,search])
+  if(!authReady)return <main className="ad-page"><div className="ad-panel">جارٍ التحقق من الدخول...</div></main>
+  if(!user)return <main className="ad-page"><form className="ad-login" onSubmit={login}><div className="ad-brand">MATA <span>ADMIN</span></div><h1>تسجيل دخول الإدارة</h1><p>الدخول للمصرّح لهم فقط</p><label>البريد الإلكتروني<input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required /></label><label>كلمة المرور<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required /></label>{error&&<p className="ad-error">{error}</p>}<button className="ad-btn ad-primary ad-full">تسجيل الدخول</button><a href="/" className="ad-link">الرجوع للمتجر</a></form></main>
+  return <main className="ad-page" dir="rtl">
+    <header className="ad-top"><div className="ad-brand">MATA <span>ADMIN</span></div><div className="ad-row"><span>{user.email}</span><button className="ad-btn" onClick={()=>signOut(auth)}>تسجيل الخروج</button></div></header>
+    <div className="ad-layout"><aside className="ad-side"><h2>لوحة التحكم</h2><button className={section==='products'?'chosen':''} onClick={()=>{setSection('products');setEditing(null)}}>المنتجات والمخزون</button><button className={section==='orders'?'chosen':''} onClick={()=>{setSection('orders');setEditing(null)}}>الطلبات</button><button onClick={refresh}>تحديث البيانات</button><a href="/" className="ad-link">عرض المتجر ↗</a></aside>
+    <section className="ad-content"><div className="ad-row ad-between ad-title"><div><h1>{section==='products'?'المنتجات والمخزون':'إدارة الطلبات'}</h1><p>{section==='products'?`${products.length} منتج`:`${orders.length} طلب`}</p></div><button className="ad-btn" disabled={loading} onClick={refresh}>{loading?'جارٍ التحديث...':'تحديث'}</button></div>
+    {notice&&<p className="ad-success">{notice}</p>}{error&&<p className="ad-error">{error}</p>}
+    {section==='products'&&(editing?<ProductEditor key={editing.id||'new'} initial={editing.id?editing:null} saving={saving} onCancel={()=>setEditing(null)} onSave={saveProduct}/>:<><div className="ad-toolbar"><input placeholder="ابحث باسم المنتج أو القسم أو المعرّف" value={search} onChange={e=>setSearch(e.target.value)}/><button className="ad-btn ad-primary" onClick={()=>{setNotice('');setEditing({})}}>+ إضافة منتج</button></div><div className="ad-table-wrap"><table className="ad-table"><thead><tr><th>المنتج</th><th>القسم</th><th>السعر</th><th>المخزون</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>{filtered.map(p=><tr key={p.id}><td><div className="ad-product"><img src={p.image} alt="" onError={e=>{e.currentTarget.style.visibility='hidden'}}/><div><b>{p.name}</b><small>{p.id}</small></div></div></td><td>{categories.find(([k])=>k===p.category)?.[1]||p.category}</td><td>{money(p.price)}</td><td>{(p.colors||[]).reduce((s,c)=>s+Number(c.stock||0),0)}</td><td><span className={`ad-status ${p.active===false?'off':'on'}`}>{p.active===false?'مخفي':'نشط'}</span></td><td><div className="ad-row"><button className="ad-btn" onClick={()=>setEditing(p)}>تعديل</button><button className="ad-btn" onClick={()=>toggleProduct(p)}>{p.active===false?'إظهار':'إخفاء'}</button></div></td></tr>)}{!filtered.length&&<tr><td colSpan="6" className="ad-empty">لا توجد منتجات مطابقة.</td></tr>}</tbody></table></div></>))}
+    {section==='orders'&&<div className="ad-orders">{orders.map(o=><article className="ad-order" key={o.id}><div className="ad-row ad-between"><div><b>طلب #{o.id}</b><small>{o.customer?.name||o.customer?.fullName||'عميل'} · {o.customer?.phone||'لا يوجد هاتف'}</small></div><span className="ad-status">{labelStatus(o.status)}</span></div><div className="ad-order-meta"><span>الإجمالي: <b>{money(o.total)}</b></span><span>الدفع: {o.paymentMethod==='cod'?'الدفع عند الاستلام':o.paymentMethod||'غير محدد'}</span><span>العنوان: {o.customer?.address||o.customer?.shippingAddress||'غير مسجل'}</span></div><div className="ad-items">{(o.items||[]).map((it,i)=><span key={`${it.productId||i}-${i}`}>{it.name||it.productName||it.productId} × {it.quantity}</span>)}</div><label className="ad-status-select">تغيير الحالة<select value="" disabled={!(transitions[o.status]||[]).length} onChange={e=>e.target.value&&changeStatus(o,e.target.value)}><option value="">اختار حالة جديدة</option>{(transitions[o.status]||[]).map(s=><option key={s} value={s}>{labelStatus(s)}</option>)}</select></label></article>)}{!orders.length&&<div className="ad-empty">لا توجد طلبات حتى الآن.</div>}</div>}
+    </section></div><footer className="ad-footer">MATA Store · لوحة الإدارة</footer>
+  </main>
+}
