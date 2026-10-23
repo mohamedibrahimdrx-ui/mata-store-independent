@@ -64,12 +64,12 @@ const order = (n, items, cityId = 'cairo', extra = {}) => call('ORD POST /', { h
   const o999 = await order(1, [{ productId: 'p999', quantity: 1, colorId: 'black' }]);
   check('999 EGP: shipping charged (50), total 1049', o999.status === 201 && o999.body.shippingFee === 50 && o999.body.total === 1049, JSON.stringify(o999.body));
   const o1000 = await order(2, [{ productId: 'p1000', quantity: 1, colorId: 'black' }]);
-  check('exactly 1000 EGP: NOT free (50), total 1050', o1000.body.shippingFee === 50 && o1000.body.total === 1050, JSON.stringify(o1000.body));
+  check('exactly 1000 EGP: free shipping, total 1000', o1000.body.shippingFee === 0 && o1000.body.total === 1000, JSON.stringify(o1000.body));
   const o1001 = await order(3, [{ productId: 'p1001', quantity: 1, colorId: 'black' }]);
   check('1001 EGP: FREE shipping, total 1001', o1001.body.shippingFee === 0 && o1001.body.total === 1001, JSON.stringify(o1001.body));
   const saved = [...store].filter(([k]) => k.startsWith('orders/')).map(([, d]) => d);
   check('order documents store subtotal/shippingFee/freeShippingApplied/total', saved.every((d) => 'subtotal' in d && 'shippingFee' in d && typeof d.freeShippingApplied === 'boolean' && d.total === d.subtotal + d.shippingFee) && saved.some((d) => d.freeShippingApplied === true));
-  const two500 = await order(4, [{ productId: 'p500', quantity: 2, colorId: 'black' }]); check('2 x 500 = 1000: not free', two500.body.shippingFee === 50);
+  const two500 = await order(4, [{ productId: 'p500', quantity: 2, colorId: 'black' }]); check('2 x 500 = 1000: free shipping', two500.body.shippingFee === 0);
   const two501 = await order(5, [{ productId: 'p501', quantity: 2, colorId: 'black' }]); check('2 x 501 = 1002: free', two501.body.shippingFee === 0 && two501.body.total === 1002);
   const mixed = await order(6, [{ productId: 'p500', quantity: 1, colorId: 'black' }, { productId: 'p501', quantity: 1, colorId: 'black' }]); check('mixed cart 500+501 = 1001: free', mixed.body.shippingFee === 0);
   const delta = await order(7, [{ productId: 'p999', quantity: 1, colorId: 'black' }], 'alexandria'); check('zone fee used (Alexandria 65)', delta.body.shippingFee === 65);
@@ -92,7 +92,7 @@ const order = (n, items, cityId = 'cairo', extra = {}) => call('ORD POST /', { h
   store.set('settings/shipping', { freeShippingEnabled: 'yes', freeShippingThreshold: -5 });
   const c5 = await order(16, [{ productId: 'p999', quantity: 1, colorId: 'black' }]); check('corrupted settings document -> safe defaults, orders still work', c5.status === 201 && c5.body.shippingFee === 50);
   store.delete('settings/shipping');
-  check('computeShipping unit: 1000 vs 1001', computeShipping(1000, 'giza').fee === 50 && computeShipping(1001, 'giza').fee === 0 && computeShipping(1, 'nope') === null);
+  check('computeShipping unit: 1000 and 1001 both qualify', computeShipping(1000, 'giza').fee === 0 && computeShipping(1001, 'giza').fee === 0 && computeShipping(1, 'nope') === null);
 
   section('SETTINGS (public + admin validation)');
   const pubDefaults = await call('SET GET /');

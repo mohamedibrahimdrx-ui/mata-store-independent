@@ -2,12 +2,11 @@
   "name": "mata-store",
   "private": true,
   "version": "1.0.0",
-  "description": "MATA Store monorepo root. Dependencies live in backend/ and frontend/ (see vercel.json installCommand).",
-  "engines": { "node": "22.x" },
+  "description": "MATA Store monorepo root. Two Vercel services (see vercel.json): backend/ (Express API) and frontend/ (Vite). Each installs its own dependencies.",
   "scripts": {
     "install:all": "npm ci --prefix backend && npm ci --prefix frontend",
-    "build": "npm run build --prefix frontend",
     "test": "npm test --prefix backend",
+    "dev": "vercel dev",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend"
   }

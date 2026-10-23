@@ -28,9 +28,9 @@ Base project: `mata-store-new-fixed_5.zip`. Nothing here has been deployed; see 
 
 | File | Change |
 |---|---|
-| `api/index.js` (new) | Vercel Function entry; exports the Express app. |
-| `vercel.json` (new) | Build settings, `/api/*` → function, `/admin` → SPA, basic security headers. |
-| `package.json` (new, root) | Scripts only; Node 22. |
+| `vercel.json` (new) | **Vercel Services** config: `backend` (Express, `backend/app.js`) and `frontend` (Vite). Top-level rewrites: `/api/(.*)` → backend, everything else → frontend. `/admin` fallback and security headers live on the frontend service. No bindings: no service calls another. |
+| `package.json` (new, root) | Scripts only (`npm run dev` = `vercel dev`). |
+| `backend/package.json`, `frontend/package.json` | `engines.node` = `22.x` so each service builds on Node 22. |
 | `backend/app.js` (new) | The Express app from `server.js`, plus `trust proxy`, exported. |
 | `backend/server.js` | Now only `listen` (local use). |
 | `backend/src/database/credentials.js` (new) + `firestore.js` | Credentials from env vars, ADC fallback for local use. |
@@ -46,12 +46,11 @@ Preserved: UI, admin panel, API paths and formats, Firestore schema, COD checkou
 
 ## 3. Vercel settings
 
-- **Root Directory:** the folder that contains `vercel.json`, `api/`, `backend/`, `frontend/`.
-- **Framework Preset:** Other. Install / Build / Output are taken from `vercel.json`:
-  - Install: `npm ci --prefix backend && npm ci --prefix frontend`
-  - Build: `npm run build --prefix frontend`
-  - Output: `frontend/dist`
-- **Node.js version:** 22.x.
+- **Root Directory:** the folder that contains `vercel.json`, `backend/` and `frontend/`.
+- **Services:** defined entirely in `vercel.json`; build and runtime keys are not valid at the top level in services mode, so there are no project-level install/build/output overrides. Each service installs from its own `package-lock.json` (`npm ci`), and the Vite service builds to `dist` by default. Services is a Vercel beta feature; check the project's Framework Preset in the dashboard against the current Vercel docs if the import screen asks.
+- **Routing:** the backend receives the original path (`/api/products`, not `/products`), which matches the Express mounts in `backend/app.js`.
+- **Node.js version:** 22.x (from each service's `package.json`).
+- **Local:** `vercel dev` runs both services together.
 - **Function region:** Project Settings → Functions → pick the region closest to your Firestore database location.
 
 ## 4. Environment variables
@@ -119,7 +118,7 @@ Your zips included an incomplete `node_modules` folder (e.g. zod missing). Leave
 7. Check on the preview URL:
    - `/api/health` → `{"status":"ok"}`
    - `/api/products` → your products
-   - `/admin` → log in with your admin account
+   - `/admin` → log in with your admin account (confirms the `/admin` fallback works)
    - Upload one small image and one small video
    - Place a Cash on Delivery test order, then cancel it in admin (cancelling restores the stock)
    - If login shows the missing-variables message, add the variables and **redeploy**
