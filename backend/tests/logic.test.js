@@ -8,24 +8,29 @@ const Z = process.env.ZOD_PATH || 'zod';
 const store = new Map(); let seq = 1; const handlers = {}; let current = 'x';
 const mkRouter = (tag) => { const r = {}; for (const m of ['get', 'post', 'put', 'patch', 'delete']) r[m] = (p, ...hs) => { handlers[`${tag} ${m.toUpperCase()} ${p}`] = hs; }; r.use = () => {}; return r; };
 class FakeError extends Error { constructor(m, code) { super(m); this.code = code; } }
-const colRows = (name) => [...store].filter(([k]) => k.startsWith(name + '/')).map(([k, d]) => ({ id: k.slice(name.length + 1), data: () => d, get: (f) => d[f] }));
-const mkQuery = (name, filters = []) => ({
-  where: (f, op, v) => mkQuery(name, [...filters, [f, v]]),
-  limit: () => ({ get: async () => ({ docs: colRows(name).filter((r) => filters.every(([f, v]) => r.data()[f] === v)) }) }),
+const colRows = (name) => [...store].filter(([k]) => k.startsWith(name + '/')).map(([k, d]) => ({ id: k.slice(name.length + 1), ref: docRef(name, k.slice(name.length + 1)), data: () => d, get: (f) => d[f] }));
+const cmpVal = (v) => (v instanceof Date ? v.getTime() : v);
+const OPS = { '==': (a, b) => cmpVal(a) === cmpVal(b), '>=': (a, b) => cmpVal(a) >= cmpVal(b), '<': (a, b) => cmpVal(a) < cmpVal(b) };
+const mkQuery = (name, filters = [], order = null) => ({
+  where: (f, op, v) => mkQuery(name, [...filters, [f, op, v]], order),
+  orderBy: (f, dir) => mkQuery(name, filters, [f, dir]),
+  limit: (n) => ({ get: async () => { let rows = colRows(name).filter((r) => filters.every(([f, op, v]) => r.data()[f] !== undefined && OPS[op](r.data()[f], v)));
+    if (order) rows = rows.sort((a, b) => (cmpVal(a.data()[order[0]]) - cmpVal(b.data()[order[0]])) * (order[1] === 'desc' ? -1 : 1)); return { docs: rows.slice(0, n) }; } }),
 });
 const docRef = (name, id) => { const key = `${name}/${id}`; return { id,
   create: async (d) => { if (store.has(key)) throw new FakeError('ALREADY_EXISTS: already exists', 6); store.set(key, d); },
   set: async (d) => { store.set(key, d); }, update: async (d) => { store.set(key, { ...store.get(key), ...d }); }, delete: async () => { store.delete(key); },
   get: async () => ({ exists: store.has(key), id, data: () => store.get(key), get: (f) => store.get(key)?.[f] }) }; };
 const fakeDb = { db: {
-  collection: (name) => ({ doc: (id) => docRef(name, id || 'gen' + seq++), ...mkQuery(name), orderBy: () => ({ limit: () => ({ get: async () => ({ docs: colRows(name) }) }) }) }),
+  collection: (name) => ({ doc: (id) => docRef(name, id || 'gen' + seq++), ...mkQuery(name) }),
+  batch: () => { const ops = []; return { update: (ref, d) => ops.push([ref, d]), commit: async () => { for (const [ref, d] of ops) await ref.update(d); } }; },
   runTransaction: async (fn) => fn({ get: (ref) => ref.get(), update: (ref, d) => ref.update(d), create: (ref, d) => ref.create(d) }),
 } };
 global.__upload = { file: null, err: null }; let cloudinaryMode = 'ok';
 class MulterError extends Error { constructor(code) { super(code); this.code = code; } }
 const multerStub = () => ({ single: () => (req, res, cb) => { if (global.__upload.err) return cb(global.__upload.err); req.file = global.__upload.file; cb(null); } });
 multerStub.memoryStorage = () => ({}); multerStub.MulterError = MulterError;
-const cloudinaryStub = { v2: { config() {}, uploader: { upload_stream: (opts, cb) => { const { Writable } = require('stream'); return new Writable({ write(c, e, n) { n(); }, final(n) { if (cloudinaryMode === 'fail') cb(Object.assign(new Error('boom api_secret=XYZ'), { http_code: 401 })); else cb(null, { secure_url: 'https://res.cloudinary.com/demo/video/upload/v1/mata/videos/v1.mp4', public_id: 'mata/videos/v1' }); n(); } }); } } } };
+const cloudinaryStub = { v2: { config() {}, utils: { api_sign_request: (params, secret) => 'sig|' + JSON.stringify(params) + '|' + (secret ? 'has-secret' : 'no-secret') }, uploader: { upload_stream: (opts, cb) => { const { Writable } = require('stream'); return new Writable({ write(c, e, n) { n(); }, final(n) { if (cloudinaryMode === 'fail') cb(Object.assign(new Error('boom api_secret=XYZ'), { http_code: 401 })); else cb(null, { secure_url: 'https://res.cloudinary.com/demo/video/upload/v1/mata/videos/v1.mp4', public_id: 'mata/videos/v1' }); n(); } }); } } } };
 const orig = Module._load;
 Module._load = function (req, parent, ...r) {
   if (req === 'express') return { Router: () => mkRouter(current) };
@@ -38,7 +43,7 @@ Module._load = function (req, parent, ...r) {
   return orig.call(this, req, parent, ...r);
 };
 const load = (tag, f) => { current = tag; return require(path.join(BACK, f)); };
-load('ORD', 'routes/orders.js'); load('SET', 'routes/settings.js'); load('ASET', 'routes/adminSettings.js');
+load('ORD', 'routes/orders.js'); load('AORD', 'routes/adminOrders.js'); load('SET', 'routes/settings.js'); load('ASET', 'routes/adminSettings.js');
 load('REV', 'routes/reviews.js'); load('AREV', 'routes/adminReviews.js'); load('UP', 'routes/adminUpload.js'); load('PUB', 'routes/products.js'); load('APRD', 'routes/adminProducts.js');
 const { parseVideoUrl, productSchema, normalizeProductImages } = require(path.join(BACK, 'validators/product.js'));
 const { computeShipping } = require(path.join(BACK, 'config/shipping.js'));
@@ -201,8 +206,60 @@ const order = (n, items, cityId = 'cairo', extra = {}) => call('ORD POST /', { h
   check('public list respects sortOrder (lowest first)', all[0].id === bp.body.id, all.slice(0, 2).map((x) => x.name).join(','));
   for (let i = 0; i < 60; i++) store.delete(`products/bulk${i}`);
 
-  section('STATIC SECURITY CHECKS on server.js');
-  const srv = require('fs').readFileSync(path.join(BACK, '../server.js'), 'utf8');
+  section('ADMIN ORDERS: sales totals (Cairo time) + read/unread');
+  const { startOfDayUtc } = require(path.join(BACK, 'utils/cairoTime.js'));
+  const at = (y, m, d, h = 12) => new Date(startOfDayUtc(y, m, d) + h * 3600 * 1000);   // Cairo local time of day
+  const mkOrder = (id, createdAt, status, subtotal, shippingFee, extra = {}) => store.set(`orders/${id}`, { orderNumber: id, customer: { fullName: 'عميل', phone: '01012345678' }, items: [], createdAt, status, subtotal, ...(shippingFee === undefined ? {} : { shippingFee, total: subtotal + shippingFee }), ...(shippingFee === undefined ? { total: subtotal } : {}), ...extra });
+  for (const k of [...store.keys()]) if (k.startsWith('orders/')) store.delete(k);
+  mkOrder('d1', at(2026, 3, 10, 9), 'pending', 500, 50);
+  mkOrder('d2', at(2026, 3, 10, 20), 'delivered', 1001, 0);
+  mkOrder('d3', at(2026, 3, 10, 23), 'cancelled', 700, 50);             // cancelled: never counted as sales
+  mkOrder('d4', at(2026, 3, 10, 0.2), 'shipped', 300, undefined);       // legacy order: no shippingFee, total = subtotal
+  mkOrder('e1', at(2026, 3, 11, 1), 'confirmed', 200, 50);
+  mkOrder('m1', at(2026, 2, 28, 12), 'delivered', 999, 50);             // another month
+  mkOrder('n1', at(2026, 3, 31, 23.5), 'pending', 100, 50);             // last half hour of March in Cairo
+  mkOrder('n2', at(2026, 4, 1, 0.3), 'pending', 400, 50);               // first minutes of April in Cairo
+  const stats = (q) => call('AORD GET /stats', { query: q });
+  let ro = await stats({ period: 'day', date: '2026-03-10' });
+  check('daily sales = all non-cancelled orders of that Cairo day (550 + 1001 + 300 = 1851)', ro.status === 200 && ro.body.sales.count === 3 && ro.body.sales.total === 550 + 1001 + 300, JSON.stringify(ro.body.sales));
+  check('daily: subtotal / shipping split, legacy order counted without shipping', ro.body.sales.subtotal === 500 + 1001 + 300 && ro.body.sales.shipping === 50);
+  check('daily: cancelled order excluded from sales but reported separately', ro.body.byStatus.cancelled.count === 1 && ro.body.byStatus.cancelled.total === 750 && ro.body.byStatus.delivered.total === 1001 && ro.body.byStatus.pending.count === 1);
+  ro = await stats({ period: 'day', date: '2026-03-11' }); check('another day only includes its own orders', ro.body.sales.count === 1 && ro.body.sales.total === 250);
+  ro = await stats({ period: 'month', date: '2026-03' });
+  check('monthly total (March): includes 23:30 on the 31st, excludes 00:18 on April 1st and February orders', ro.body.sales.count === 5 && ro.body.sales.total === 550 + 1001 + 300 + 250 + 150 && !JSON.stringify(ro.body.byDay).includes('2026-04') && !JSON.stringify(ro.body.byDay).includes('2026-02'), JSON.stringify(ro.body.sales));
+  check('monthly byDay breakdown sums to the monthly total, ordered by date', ro.body.byDay.map((x) => x.date).join() === '2026-03-10,2026-03-11,2026-03-31' && ro.body.byDay.reduce((a, x) => a + x.total, 0) === ro.body.sales.total && ro.body.byDay[0].count === 3);
+  ro = await stats({ period: 'month', date: '2026-04' }); check('April starts at Cairo midnight (the 00:18 order belongs to April)', ro.body.sales.count === 1 && ro.body.sales.total === 450);
+  ro = await stats({ period: 'month', date: '2026-01' }); check('empty month -> zeros (no crash)', ro.status === 200 && ro.body.sales.count === 0 && ro.body.sales.total === 0 && ro.body.byDay.length === 0);
+  const today = require(path.join(BACK, 'utils/cairoTime.js')).todayInCairo(); mkOrder('today1', new Date(), 'pending', 123, 0);
+  ro = await stats({}); check('default = today in Cairo', ro.status === 200 && ro.body.date === today && ro.body.sales.total === 123, JSON.stringify(ro.body));
+  for (const [n, q] of [['bad period', { period: 'year' }], ['bad date', { period: 'day', date: '2026-02-30' }], ['garbage date', { date: 'abc' }], ['injection-like date', { date: "2026-03-10' OR 1=1" }]]) { const x = await stats(q); check(`stats rejects: ${n}`, x.status === 400, JSON.stringify(x.body)); }
+  // read / unread
+  const seenCall = (id, body) => call('AORD PATCH /:id/seen', { params: { id }, body });
+  check('new orders are unread by default (no seen flag)', store.get('orders/d1').seen === undefined);
+  ro = await seenCall('d1', { seen: true }); check('mark as read stores seen/seenAt/seenBy', ro.status === 200 && store.get('orders/d1').seen === true && store.get('orders/d1').seenBy === 'admin1' && !!store.get('orders/d1').seenAt);
+  ro = await seenCall('d1', { seen: false }); check('mark as unread again', store.get('orders/d1').seen === false && store.get('orders/d1').seenAt === null);
+  check('seen validation: non-boolean / unknown order / bad id', (await seenCall('d1', { seen: 'yes' })).status === 400 && (await seenCall('nope', { seen: true })).status === 404 && (await seenCall('../x', { seen: true })).status === 400);
+  ro = await call('AORD POST /seen-all'); check('mark ALL as read', ro.status === 200 && ro.body.updated > 5 && [...store].filter(([k, v]) => k.startsWith('orders/') && v.seen !== true).length === 0, JSON.stringify(ro.body));
+  ro = await call('AORD PATCH /:id/status', { params: { id: 'e1' }, body: { status: 'shipped' } }); check('status update still follows the allowed transitions (confirmed -> shipped)', ro.status === 200 && store.get('orders/e1').status === 'shipped');
+  await seenCall('e1', { seen: false }); await call('AORD PATCH /:id/status', { params: { id: 'e1' }, body: { status: 'delivered' } }); check('changing the status marks the order as read', store.get('orders/e1').seen === true);
+  ro = await call('AORD PATCH /:id/status', { params: { id: 'd2' }, body: { status: 'pending' } }); check('invalid transition still refused (delivered -> pending)', ro.status === 409);
+  ro = await call('AORD GET /', { query: { limit: '9999' } }); check('order list returns orders (limit capped)', ro.status === 200 && ro.body.orders.length > 5);
+
+  section('SIGNED DIRECT UPLOAD (Vercel has a ~4.5 MB request-body limit)');
+  process.env.CLOUDINARY_CLOUD_NAME = 'demo'; process.env.CLOUDINARY_API_KEY = 'k'; process.env.CLOUDINARY_API_SECRET = 'topsecret';
+  let sg = await call('UP POST /sign', { body: { type: 'image' } });
+  check('sign image: folder/formats are server-chosen and part of the signature', sg.status === 200 && sg.body.folder === 'mata/products' && sg.body.allowedFormats === 'jpg,jpeg,png,webp' && sg.body.signature.includes('"folder":"mata/products"') && sg.body.signature.includes('"allowed_formats":"jpg,jpeg,png,webp"') && Number.isInteger(sg.body.timestamp), JSON.stringify(sg.body));
+  check('sign image: upload URL targets the configured cloud and /image/upload; limit is 5 MB', sg.body.uploadUrl === 'https://api.cloudinary.com/v1_1/demo/image/upload' && sg.body.maxBytes === 5 * 1024 * 1024 && sg.body.apiKey === 'k');
+  check('sign: the API secret is never returned', !JSON.stringify(sg.body).includes('topsecret'));
+  sg = await call('UP POST /sign', { body: { type: 'video' } });
+  check('sign video: video folder, formats, /video/upload and configured size cap', sg.status === 200 && sg.body.folder === 'mata/videos' && sg.body.allowedFormats === 'mp4,webm,mov' && sg.body.uploadUrl.endsWith('/video/upload') && sg.body.maxBytes === 50 * 1024 * 1024);
+  for (const bad of [{}, { type: 'raw' }, { type: '__proto__' }, { type: ['image'] }, { type: 'image/../x' }]) { sg = await call('UP POST /sign', { body: bad }); check('sign rejects type ' + JSON.stringify(bad), sg.status === 400 && sg.body.error === 'INVALID_UPLOAD_TYPE', JSON.stringify(sg.body)); }
+  check('sign: client cannot pick the folder', (await call('UP POST /sign', { body: { type: 'image', folder: 'evil' } })).body.folder === 'mata/products');
+  delete process.env.CLOUDINARY_API_SECRET; sg = await call('UP POST /sign', { body: { type: 'image' } }); check('sign: missing Cloudinary config -> 503', sg.status === 503);
+  process.env.CLOUDINARY_API_SECRET = 's';
+
+  section('STATIC SECURITY CHECKS on app.js (server.js only calls listen)');
+  const srv = require('fs').readFileSync(path.join(BACK, '../app.js'), 'utf8');
   for (const m of ['/api/admin/settings', '/api/admin/reviews', '/api/admin/upload', '/api/admin/products', '/api/admin/orders']) check(`${m} mounted behind requireAdmin`, new RegExp(`app\\.use\\("${m}", requireAdmin`).test(srv));
   check('public routes /api/settings and /api/reviews mounted', /app\.use\("\/api\/settings"/.test(srv) && /app\.use\("\/api\/reviews"/.test(srv));
   check('helmet + CORS + rate limit still present, DELETE allowed in CORS', srv.includes('helmet()') && srv.includes('cors(') && srv.includes('rateLimit(') && srv.includes('"DELETE"'));

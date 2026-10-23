@@ -17,13 +17,13 @@ const DEFAULT_SHIPPING = {
   zoneFees: { greaterCairo: 50, deltaCanal: 65, upperEgypt: 80, remote: 110 },
 };
 
-// Free shipping applies when the products subtotal is STRICTLY GREATER than the threshold
-// (exactly 1000 pays shipping, 1001 ships free). Returns null for an unknown governorate id.
+// Free shipping applies when the products subtotal is GREATER THAN OR EQUAL TO the threshold.
+// Exactly 1000 EGP qualifies for free shipping. Returns null for an unknown governorate id.
 function computeShipping(subtotal, cityId, settings = DEFAULT_SHIPPING) {
   const zone = Object.prototype.hasOwnProperty.call(GOVERNORATE_ZONES, cityId) ? GOVERNORATE_ZONES[cityId] : null;
   if (!zone) return null;
   const baseFee = settings.zoneFees?.[zone] ?? DEFAULT_SHIPPING.zoneFees[zone];
-  const freeShipping = settings.freeShippingEnabled === true && subtotal > settings.freeShippingThreshold;
+  const freeShipping = settings.freeShippingEnabled === true && Number(subtotal) >= Number(settings.freeShippingThreshold);
   return { zone, baseFee, freeShipping, fee: freeShipping ? 0 : baseFee };
 }
 

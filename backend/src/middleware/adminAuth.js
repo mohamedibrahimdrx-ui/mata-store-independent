@@ -1,4 +1,6 @@
 const { getAuth } = require("firebase-admin/auth");
+// Ensures the Firebase Admin app (with its credentials) is initialised before verifyIdToken is called.
+require("../database/firestore");
 
 async function requireAdmin(req, res, next) {
   const match = (req.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);

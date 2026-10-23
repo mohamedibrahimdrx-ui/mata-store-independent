@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, mergeSettings } from '../site/defaults'
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+import { API_BASE as API_URL } from './base'
 
 async function getJson(path, timeoutMs = 10000) {
   const controller = new AbortController()

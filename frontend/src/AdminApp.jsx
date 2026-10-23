@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 
-import { auth } from './firebase'
+import { auth, firebaseConfigError } from './firebase'
 
 import { adminRequest } from './api/admin'
 
@@ -11,6 +11,8 @@ import ProductImagesEditor, { ColorImagePicker } from './ProductImagesEditor'
 import ProductVideoEditor from './ProductVideoEditor'
 
 import AdminReviews from './AdminReviews'
+
+import AdminOrders from './AdminOrders'
 
 import { AnnouncementAdmin, ShippingAdmin, HomeContentAdmin, BrandAdmin, LayoutAdmin, CategoriesAdmin, FooterAdmin } from './AdminSite'
 
@@ -373,13 +375,25 @@ export default function AdminApp() {
 
 
 
-  useEffect(() => onAuthStateChanged(auth, (currentUser) => {
+  useEffect(() => {
 
-    setUser(currentUser)
+    if (!auth) {
 
-    setAuthReady(true)
+      setAuthReady(true)
 
-  }), [])
+      return undefined
+
+    }
+
+    return onAuthStateChanged(auth, (currentUser) => {
+
+      setUser(currentUser)
+
+      setAuthReady(true)
+
+    })
+
+  }, [])
 
 
 
@@ -390,6 +404,16 @@ export default function AdminApp() {
     setProducts(Array.isArray(data.products) ? data.products : [])
 
   }
+
+  const unreadOrders = orders.filter((o) => o.seen !== true).length
+
+  // New orders appear without pressing refresh (only while the orders screen is open and the tab is visible)
+  useEffect(() => {
+    if (!user || section !== 'orders') return undefined
+    const timer = setInterval(() => { if (!document.hidden) loadOrders().catch(() => {}) }, 60000)
+    return () => clearInterval(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, section])
 
   async function loadCategories() {
     try {
@@ -402,7 +426,7 @@ export default function AdminApp() {
   }
   async function loadOrders() {
 
-    const data = await adminRequest(user, '/api/admin/orders?limit=100')
+    const data = await adminRequest(user, '/api/admin/orders?limit=300')
 
     setOrders(Array.isArray(data.orders) ? data.orders : [])
 
@@ -548,6 +572,8 @@ export default function AdminApp() {
 
   if (!authReady) return <main className="ad-page"><div className="ad-panel">جارٍ التحقق من الدخول...</div></main>
 
+  if (!auth) return <main className="ad-page" dir="rtl"><div className="ad-panel"><h2>تعذر تشغيل تسجيل الدخول</h2><p>{firebaseConfigError}</p><p>أضف المتغيرات في إعدادات المشروع على Vercel ثم أعد النشر (Redeploy).</p></div></main>
+
   if (!user) {
 
     return (
@@ -602,7 +628,7 @@ export default function AdminApp() {
 
           <button className={section === 'products' ? 'chosen' : ''} onClick={() => { setSection('products'); setEditing(null) }}>المنتجات والمخزون</button>
 
-          <button className={section === 'orders' ? 'chosen' : ''} onClick={() => { setSection('orders'); setEditing(null) }}>الطلبات</button>
+          <button className={section === 'orders' ? 'chosen' : ''} onClick={() => { setSection('orders'); setEditing(null) }}>الطلبات{unreadOrders > 0 && <span className="ad-nav-badge" aria-label={`${unreadOrders} طلب غير مقروء`}>{unreadOrders}</span>}</button>
           {SITE_SECTIONS.map(([key, label]) => (
             <button key={key} className={section === key ? 'chosen' : ''} onClick={() => { setSection(key); setEditing(null) }}>{label}</button>
           ))}
@@ -692,29 +718,16 @@ export default function AdminApp() {
           ))}
 
           {section === 'orders' && (
-
-            <div className="ad-orders">
-
-              {orders.map((order) => (
-
-                <article className="ad-order" key={order.id}>
-
-                  <div className="ad-row ad-between"><div><b>طلب #{order.id}</b><small>{order.customer?.name || order.customer?.fullName || 'عميل'} · {order.customer?.phone || 'لا يوجد هاتف'}</small></div><span className="ad-status">{labelStatus(order.status)}</span></div>
-
-                  <div className="ad-order-meta"><span>الإجمالي: <b>{money(order.total)}</b></span>{Number.isFinite(order.shippingFee) && <span>الشحن: <b>{order.shippingFee === 0 ? 'مجاني' : money(order.shippingFee)}</b>{Number.isFinite(order.subtotal) && <> (المنتجات {money(order.subtotal)})</>}</span>}<span>الدفع: {order.paymentMethod === 'cod' ? 'الدفع عند الاستلام' : order.paymentMethod || 'غير محدد'}</span><span>العنوان: {order.customer?.address || order.customer?.shippingAddress || 'غير مسجل'}</span></div>
-
-                  <div className="ad-items">{(order.items || []).map((item, index) => <span key={`${item.productId || index}-${index}`}>{item.name || item.productName || item.productId} × {item.quantity}</span>)}</div>
-
-                  <label className="ad-status-select">تغيير الحالة<select value="" disabled={(transitions[order.status] || []).length === 0} onChange={(event) => event.target.value && changeStatus(order, event.target.value)}><option value="">اختار حالة جديدة</option>{(transitions[order.status] || []).map((status) => <option key={status} value={status}>{labelStatus(status)}</option>)}</select></label>
-
-                </article>
-
-              ))}
-
-              {!orders.length && <div className="ad-empty">لا توجد طلبات حتى الآن.</div>}
-
-            </div>
-
+            <AdminOrders
+              user={user}
+              orders={orders}
+              loading={loading}
+              labelStatus={labelStatus}
+              transitions={transitions}
+              onChangeStatus={changeStatus}
+              onPatchOrder={(id, patch) => setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)))}
+              onReload={loadOrders}
+            />
           )}
 
         </section>

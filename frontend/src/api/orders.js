@@ -1,5 +1,5 @@
 
-const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+import { API_BASE as API_URL } from "./base";
 const TIMEOUT_MS = 15000;
 const STORAGE_KEY = "mata_pending_order_v1";
 
@@ -39,13 +39,6 @@ function clearPendingRequest() {
 }
 
 export async function submitOrder({ customer, items }) {
-  if (!API_URL) {
-    throw new OrderError(
-      "NOT_CONFIGURED",
-      "نظام استلام الطلبات مش متوصل بالمتجر."
-    );
-  }
-
   const requestBody = {
     paymentMethod: "cod",
     customer,

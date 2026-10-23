@@ -4,6 +4,7 @@ import Checkout from './Checkout'
 import ProductDetails from './ProductDetails'
 import { AnnouncementStrip, FreeShippingProgress, HeroSection, PromoBanner, SiteFooter, StoreFeatures, WhatsAppButton } from './SiteBlocks'
 import { fetchSiteSettings } from './api/site'
+import { API_BASE } from './api/base'
 import { DEFAULT_SETTINGS } from './site/defaults'
 import { optimizeImage } from './utils/images'
 import { Icon, ProductVisual } from './components/ui'
@@ -378,8 +379,7 @@ export default function App() {
 
   useEffect(() => {
     const controller = new AbortController()
-    const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')
-    const endpoint = `${apiBase}/api/products`
+    const endpoint = `${API_BASE}/api/products`
 
     async function loadProducts() {
       setProductsLoading(true)

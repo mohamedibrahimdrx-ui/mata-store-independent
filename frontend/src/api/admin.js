@@ -1,7 +1,5 @@
 
-const API_BASE = (
-  import.meta.env.VITE_API_URL || 'http://localhost:3000'
-).replace(/\/+$/, '')
+import { API_BASE } from './base'
 
 export async function adminRequest(user, path, options = {}) {
   if (!user) {
@@ -83,24 +81,49 @@ export async function adminRequest(user, path, options = {}) {
   return data
 }
 
-export async function uploadProductImage(user, file) {
-  const formData = new FormData()
-  formData.append('image', file)
-  // No manual Content-Type: the browser sets the multipart boundary.
-  const data = await adminRequest(user, '/api/admin/upload', { method: 'POST', body: formData })
-  if (!data.image || !/^https:\/\/res\.cloudinary\.com\//i.test(data.image)) {
-    throw new Error('رابط الصورة المستلم غير صالح.')
-  }
-  return data.image
+// Direct-to-Cloudinary upload. Vercel Functions reject request bodies over ~4.5 MB, so files are NOT sent
+// through our API. The (admin-only) API returns a short-lived signature; the browser then uploads straight
+// to Cloudinary. The folder and allowed formats are signed server-side, so they cannot be changed here.
+const UPLOAD_LABELS = {
+  image: { failed: 'فشل رفع الصورة إلى Cloudinary.', invalid: 'رابط الصورة المستلم غير صالح.' },
+  video: { failed: 'فشل رفع الفيديو.', invalid: 'رابط الفيديو المستلم غير صالح.' },
 }
 
-export async function uploadProductVideo(user, file) {
-  const formData = new FormData()
-  formData.append('video', file)
-  // No manual Content-Type: the browser sets the multipart boundary.
-  const data = await adminRequest(user, '/api/admin/upload/video', { method: 'POST', body: formData })
-  if (!data.video || !/^https:\/\/res\.cloudinary\.com\//i.test(data.video)) {
-    throw new Error('رابط الفيديو المستلم غير صالح.')
+async function uploadToCloudinary(user, file, type) {
+  const label = UPLOAD_LABELS[type]
+  const sign = await adminRequest(user, '/api/admin/upload/sign', { method: 'POST', body: JSON.stringify({ type }) })
+  if (file.size > sign.maxBytes) {
+    const mb = Math.floor(sign.maxBytes / (1024 * 1024))
+    throw new Error(type === 'image' ? `حجم الصورة لازم يكون ${mb} ميجابايت أو أقل.` : `حجم الفيديو يجب ألا يتجاوز ${mb} ميجابايت. للفيديوهات الطويلة استخدم رابط YouTube أو Vimeo.`)
   }
-  return data.video
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('api_key', sign.apiKey)
+  formData.append('timestamp', String(sign.timestamp))
+  formData.append('signature', sign.signature)
+  formData.append('folder', sign.folder)
+  formData.append('allowed_formats', sign.allowedFormats)
+  let response
+  try {
+    // No manual Content-Type: the browser sets the multipart boundary.
+    response = await fetch(sign.uploadUrl, { method: 'POST', body: formData })
+  } catch {
+    throw new Error(label.failed)
+  }
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data?.error?.message ? `${label.failed} (${data.error.message})` : label.failed)
+  }
+  if (typeof data.secure_url !== 'string' || !/^https:\/\/res\.cloudinary\.com\//i.test(data.secure_url)) {
+    throw new Error(label.invalid)
+  }
+  return data.secure_url
+}
+
+export function uploadProductImage(user, file) {
+  return uploadToCloudinary(user, file, 'image')
+}
+
+export function uploadProductVideo(user, file) {
+  return uploadToCloudinary(user, file, 'video')
 }

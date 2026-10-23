@@ -157,6 +157,47 @@ router.post(
   }
 );
 
+// ---------------------------------------------------------------------------
+// Signed direct upload: POST /api/admin/upload/sign   body: { "type": "image" | "video" }
+// Vercel Functions reject request bodies larger than ~4.5 MB, so images/videos cannot be streamed
+// through this API in production. Instead the (admin-only) browser asks for a short-lived signature
+// and uploads the file straight to Cloudinary. The API secret never leaves the server.
+// The folder and allowed formats are part of the signature, so they cannot be changed by the client.
+// ---------------------------------------------------------------------------
+const SIGNED_UPLOADS = {
+  image: { folder: "mata/products", allowedFormats: "jpg,jpeg,png,webp", maxBytes: 5 * 1024 * 1024 },
+  video: { folder: "mata/videos", allowedFormats: "mp4,webm,mov", maxBytes: Math.min(Math.max(Number(process.env.MAX_VIDEO_UPLOAD_MB) || 50, 1), 100) * 1024 * 1024 },
+};
+
+router.post("/sign", (req, res) => {
+  const type = (req.body || {}).type;
+  if (typeof type !== "string" || !Object.prototype.hasOwnProperty.call(SIGNED_UPLOADS, type)) {
+    return res.status(400).json({ error: "INVALID_UPLOAD_TYPE", message: "نوع الرفع غير صالح." });
+  }
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.error("Cloudinary configuration is incomplete.");
+    return res.status(503).json({ error: "IMAGE_SERVICE_NOT_CONFIGURED", message: "خدمة رفع الصور غير مكتملة الإعداد." });
+  }
+  const rule = SIGNED_UPLOADS[type];
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = cloudinary.utils.api_sign_request(
+    { allowed_formats: rule.allowedFormats, folder: rule.folder, timestamp },
+    apiSecret
+  );
+  return res.set("Cache-Control", "no-store").json({
+    uploadUrl: `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${type}/upload`,
+    apiKey,
+    timestamp,
+    signature,
+    folder: rule.folder,
+    allowedFormats: rule.allowedFormats,
+    maxBytes: rule.maxBytes,
+  });
+});
+
 // Handle unexpected router errors
 router.use((err, req, res, next) => {
   console.error("Admin upload route error:", err.message);
