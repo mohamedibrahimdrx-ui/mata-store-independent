@@ -15,4 +15,8 @@ async function requireAdmin(req, res, next) {
     return res.status(401).json({ error: "INVALID_TOKEN" });
   }
 }
-module.exports = { requireAdmin };
+// Export the middleware function itself (like every router module). On Vercel, the compiled backend/app.cjs
+// received `undefined` for `const { requireAdmin } = require(...)` from the former `module.exports = { requireAdmin }`.
+// The named property is kept so `{ requireAdmin }` imports keep working in plain Node.
+module.exports = requireAdmin;
+module.exports.requireAdmin = requireAdmin;
