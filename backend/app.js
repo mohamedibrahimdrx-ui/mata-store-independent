@@ -38,6 +38,27 @@ const describeExport = (value) => {
   try { names = Object.getOwnPropertyNames(value); } catch { names = ["<unreadable>"]; }
   return `${type} with keys [${names.join(", ")}] (toString: ${Object.prototype.toString.call(value)})`;
 };
+// For an invalid export, show WHICH file Vercel's runtime resolved and what is in it / next to it.
+// Only paths, sizes and the module.exports lines of the source file are logged (no secrets, no env values).
+const inspectModuleFile = (specifier) => {
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const resolved = require.resolve(specifier);
+    const lines = fs.readFileSync(resolved, "utf8").split("\n");
+    const cached = require.cache[resolved];
+    return {
+      appFile: __filename,
+      resolved,
+      lines: lines.length,
+      exportLines: lines.filter((l) => /module\.exports|(^|\s)exports\.|^\s*export\s/.test(l)).map((l) => l.trim().slice(0, 120)),
+      requireCache: cached ? { loaded: cached.loaded, exportKeys: Object.getOwnPropertyNames(cached.exports) } : "not in require.cache",
+      siblingFiles: fs.readdirSync(path.dirname(resolved)),
+    };
+  } catch (error) {
+    return { inspectError: error.message };
+  }
+};
 const invalidExports = [];
 for (const [name, value] of exportChecks) {
   const type = value === null ? "null" : typeof value;
@@ -46,6 +67,7 @@ for (const [name, value] of exportChecks) {
   } else {
     const shape = describeExport(value);
     console.error(`[export-check] ${name}: typeof=${type}, INVALID, shape: ${shape}`);
+    console.error(`[export-check] ${name}: file details ${JSON.stringify(inspectModuleFile(name.split(" ")[0]))}`);
     invalidExports.push(`${name} -> ${shape}`);
   }
 }
