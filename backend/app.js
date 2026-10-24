@@ -1,4 +1,5 @@
 // Loads backend/.env for local development only. On Vercel, variables come from Project Settings.
+console.log("APP_VERSION_A1 loaded");
 require("dotenv").config();
 const express = require("express");
 const helmet = require("helmet");
