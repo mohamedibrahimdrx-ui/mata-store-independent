@@ -14,6 +14,44 @@ const reviewsRouter = require("./src/routes/reviews");
 const adminSettingsRouter = require("./src/routes/adminSettings");
 const adminReviewsRouter = require("./src/routes/adminReviews");
 const { requireAdmin } = require("./src/middleware/adminAuth");
+// TEMPORARY DIAGNOSTIC (remove after the Vercel "argument handler must be a function" error is identified).
+// Vercel compiles this entrypoint (the stack trace shows backend/app.cjs). If its CommonJS conversion changes
+// what a local module exports, app.use() receives a non-function. Check every local export BEFORE any
+// route is registered, log its shape, and fail with a message that names the exact module.
+const exportChecks = [
+  ["./src/routes/products", productsRouter],
+  ["./src/routes/orders", ordersRouter],
+  ["./src/routes/adminProducts", adminProductsRouter],
+  ["./src/routes/adminOrders", adminOrdersRouter],
+  ["./src/routes/adminUpload", adminUploadRouter],
+  ["./src/routes/settings", settingsRouter],
+  ["./src/routes/reviews", reviewsRouter],
+  ["./src/routes/adminSettings", adminSettingsRouter],
+  ["./src/routes/adminReviews", adminReviewsRouter],
+  ["./src/middleware/adminAuth (requireAdmin)", requireAdmin],
+];
+const describeExport = (value) => {
+  if (value === null) return "null";
+  const type = typeof value;
+  if (type !== "object" && type !== "function") return type;
+  let names;
+  try { names = Object.getOwnPropertyNames(value); } catch { names = ["<unreadable>"]; }
+  return `${type} with keys [${names.join(", ")}] (toString: ${Object.prototype.toString.call(value)})`;
+};
+const invalidExports = [];
+for (const [name, value] of exportChecks) {
+  const type = value === null ? "null" : typeof value;
+  if (type === "function") {
+    console.log(`[export-check] ${name}: typeof=function`);
+  } else {
+    const shape = describeExport(value);
+    console.error(`[export-check] ${name}: typeof=${type}, INVALID, shape: ${shape}`);
+    invalidExports.push(`${name} -> ${shape}`);
+  }
+}
+if (invalidExports.length) {
+  throw new Error(`Invalid Express export(s) (expected a function): ${invalidExports.join(" | ")}`);
+}
 const app = express();
 app.disable("x-powered-by");
 // Vercel (and most hosts) sit behind a proxy: needed so rate limiting sees the real client IP, not the proxy's.
