@@ -13,7 +13,7 @@ const settingsRouter = require("./src/routes/settings");
 const reviewsRouter = require("./src/routes/reviews");
 const adminSettingsRouter = require("./src/routes/adminSettings");
 const adminReviewsRouter = require("./src/routes/adminReviews");
-const requireAdmin = require("./src/middleware/adminAuth");
+const requireAdmin = require("./src/auth/adminAuth");
 // TEMPORARY DIAGNOSTIC (remove after the Vercel "argument handler must be a function" error is identified).
 // Vercel compiles this entrypoint (the stack trace shows backend/app.cjs). If its CommonJS conversion changes
 // what a local module exports, app.use() receives a non-function. Check every local export BEFORE any
@@ -28,7 +28,7 @@ const exportChecks = [
   ["./src/routes/reviews", reviewsRouter],
   ["./src/routes/adminSettings", adminSettingsRouter],
   ["./src/routes/adminReviews", adminReviewsRouter],
-  ["./src/middleware/adminAuth (requireAdmin)", requireAdmin],
+  ["./src/auth/adminAuth (requireAdmin)", requireAdmin],
 ];
 const describeExport = (value) => {
   if (value === null) return "null";
