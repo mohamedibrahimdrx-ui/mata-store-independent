@@ -13,7 +13,7 @@ const settingsRouter = require("./src/routes/settings");
 const reviewsRouter = require("./src/routes/reviews");
 const adminSettingsRouter = require("./src/routes/adminSettings");
 const adminReviewsRouter = require("./src/routes/adminReviews");
-const requireAdmin = require("./src/auth/adminAuth");
+// adminAuth is loaded lazily below so a broken admin middleware export cannot prevent public API startup.
 // TEMPORARY DIAGNOSTIC (remove after the Vercel "argument handler must be a function" error is identified).
 // Vercel compiles this entrypoint (the stack trace shows backend/app.cjs). If its CommonJS conversion changes
 // what a local module exports, app.use() receives a non-function. Check every local export BEFORE any
@@ -28,7 +28,6 @@ const exportChecks = [
   ["./src/routes/reviews", reviewsRouter],
   ["./src/routes/adminSettings", adminSettingsRouter],
   ["./src/routes/adminReviews", adminReviewsRouter],
-  ["./src/auth/adminAuth (requireAdmin)", requireAdmin],
 ];
 const describeExport = (value) => {
   if (value === null) return "null";
@@ -59,6 +58,22 @@ const inspectModuleFile = (specifier) => {
     return { inspectError: error.message };
   }
 };
+// Fail-closed admin middleware loader. Public routes can start even if Vercel's bundle mishandles this module.
+const requireAdmin = (req, res, next) => {
+  try {
+    const mod = require("./src/auth/adminAuth");
+    const fn = typeof mod === "function" ? mod : mod && mod.requireAdmin;
+    if (typeof fn !== "function") {
+      console.error("[adminAuth] unavailable export:", describeExport(mod));
+      return res.status(503).json({ error: "ADMIN_AUTH_UNAVAILABLE" });
+    }
+    return fn(req, res, next);
+  } catch (error) {
+    console.error("[adminAuth] unavailable:", error && error.message ? error.message : String(error));
+    return res.status(503).json({ error: "ADMIN_AUTH_UNAVAILABLE" });
+  }
+};
+
 const invalidExports = [];
 for (const [name, value] of exportChecks) {
   const type = value === null ? "null" : typeof value;

@@ -1,3 +1,4 @@
+console.log("[adminAuth] body start");
 const { getAuth } = require("firebase-admin/auth");
 // Ensures the Firebase Admin app (with its credentials) is initialised before verifyIdToken is called.
 require("../database/firestore");
@@ -20,3 +21,4 @@ async function requireAdmin(req, res, next) {
 // The named property is kept so `{ requireAdmin }` imports keep working in plain Node.
 module.exports = requireAdmin;
 module.exports.requireAdmin = requireAdmin;
+console.log("[adminAuth] body end", typeof module.exports);
