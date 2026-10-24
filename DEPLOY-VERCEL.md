@@ -14,8 +14,8 @@
 |---|---|
 | Framework Preset | **Other** |
 | Root Directory | *(empty - repository root)* |
-| Install Command | leave default (taken from `vercel.json`: `npm ci --prefix backend && npm ci --prefix frontend`) |
-| Build Command | leave default (`npm run build --prefix frontend`) |
+| Install Command | leave default (taken from `vercel.json`: `cd backend && npm ci && cd ../frontend && npm ci`) |
+| Build Command | leave default (`cd frontend && npm run build`) |
 | Output Directory | leave default (`frontend/dist`) |
 | Node.js Version | 22.x |
 

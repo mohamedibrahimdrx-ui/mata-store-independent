@@ -1,23 +1,43 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci --prefix backend && npm ci --prefix frontend",
-  "buildCommand": "npm run build --prefix frontend",
+  "installCommand": "cd backend && npm ci && cd ../frontend && npm ci",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/index.js": { "maxDuration": 30 }
+    "api/index.js": {
+      "maxDuration": 30
+    }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/admin", "destination": "/index.html" },
-    { "source": "/admin/", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
       ]
     }
   ]

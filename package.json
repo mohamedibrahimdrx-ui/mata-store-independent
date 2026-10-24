@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "description": "MATA Store. One Vercel project: the Vite frontend (frontend/) is served as static files and the Express API (backend/) runs as a single Vercel Function via api/index.js. Backend and frontend each install their own dependencies.",
   "scripts": {
-    "install:all": "npm ci --prefix backend && npm ci --prefix frontend",
-    "build": "npm run build --prefix frontend",
+    "install:all": "cd backend && npm ci && cd ../frontend && npm ci",
+    "build": "cd frontend && npm run build",
     "test": "npm test --prefix backend",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend"
