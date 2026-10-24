@@ -44,7 +44,7 @@ Module._load = function (req, parent, ...r) {
 };
 const load = (tag, f) => { current = tag; return require(path.join(BACK, f)); };
 load('ORD', 'routes/orders.js'); load('AORD', 'routes/adminOrders.js'); load('SET', 'routes/settings.js'); load('ASET', 'routes/adminSettings.js');
-load('REV', 'routes/reviews.js'); load('AREV', 'routes/adminReviews.js'); load('UP', 'routes/adminUpload.js'); load('PUB', 'routes/products.js'); load('APRD', 'routes/adminProducts.js');
+load('REV', 'routes/reviews.js'); load('AREV', 'routes/adminReviews.js'); load('UP', 'routes/adminUpload.js'); load('PUB', 'routes/publicProducts.js'); load('APRD', 'routes/adminProducts.js');
 const { parseVideoUrl, productSchema, normalizeProductImages } = require(path.join(BACK, 'validators/product.js'));
 const { computeShipping } = require(path.join(BACK, 'config/shipping.js'));
 const { resolveSettings } = require(path.join(BACK, 'validators/settings.js'));
@@ -84,7 +84,7 @@ const order = (n, items, cityId = 'cairo', extra = {}) => call('ORD POST /', { h
   const put1 = await call('ASET PUT /:key', { params: { key: 'shipping' }, body: { freeShippingEnabled: true, freeShippingThreshold: 500, zoneFees: { greaterCairo: 40, deltaCanal: 60, upperEgypt: 75, remote: 100 } } });
   check('admin sets threshold 500 + new fees', put1.status === 200);
   const c1 = await order(12, [{ productId: 'p501', quantity: 1, colorId: 'black' }]); check('new threshold applied immediately (501 > 500 -> free)', c1.body.shippingFee === 0);
-  const c2 = await order(13, [{ productId: 'p500', quantity: 1, colorId: 'black' }]); check('500 with threshold 500 -> paid with NEW fee 40', c2.body.shippingFee === 40, JSON.stringify(c2.body));
+  const c2 = await order(13, [{ productId: 'p500', quantity: 1, colorId: 'black' }]); check('subtotal exactly at the threshold (500 with threshold 500) -> free shipping (>= rule)', c2.body.shippingFee === 0 && c2.body.total === 500, JSON.stringify(c2.body));
   await call('ASET PUT /:key', { params: { key: 'shipping' }, body: { freeShippingEnabled: false, freeShippingThreshold: 500, zoneFees: { greaterCairo: 40, deltaCanal: 60, upperEgypt: 75, remote: 100 } } });
   const c3 = await order(14, [{ productId: 'p1001', quantity: 1, colorId: 'black' }]); check('free shipping disabled -> always charged', c3.body.shippingFee === 40);
   store.delete('settings/shipping');

@@ -1,8 +1,9 @@
-console.log("[adminAuth] body start");
 const { getAuth } = require("firebase-admin/auth");
 // Ensures the Firebase Admin app (with its credentials) is initialised before verifyIdToken is called.
 require("../database/firestore");
 
+// Verifies the Firebase ID token, then checks the uid against the ADMIN_UIDS allow-list.
+// Fails closed: any verification problem (including missing Firebase credentials) is a 401.
 async function requireAdmin(req, res, next) {
   const match = (req.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!match) return res.status(401).json({ error: "AUTH_REQUIRED" });
@@ -16,9 +17,5 @@ async function requireAdmin(req, res, next) {
     return res.status(401).json({ error: "INVALID_TOKEN" });
   }
 }
-// Export the middleware function itself (like every router module). On Vercel, the compiled backend/app.cjs
-// received `undefined` for `const { requireAdmin } = require(...)` from the former `module.exports = { requireAdmin }`.
-// The named property is kept so `{ requireAdmin }` imports keep working in plain Node.
+
 module.exports = requireAdmin;
-module.exports.requireAdmin = requireAdmin;
-console.log("[adminAuth] body end", typeof module.exports);

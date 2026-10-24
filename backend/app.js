@@ -1,5 +1,5 @@
 // Loads backend/.env for local development only. On Vercel, variables come from Project Settings.
-require("dotenv").config();
+if (!process.env.VERCEL) require("dotenv").config({ quiet: true });
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
@@ -14,6 +14,7 @@ const reviewsRouter = require("./src/routes/reviews");
 const adminSettingsRouter = require("./src/routes/adminSettings");
 const adminReviewsRouter = require("./src/routes/adminReviews");
 const requireAdmin = require("./src/auth/adminAuth");
+const { getFirebaseStatus } = require("./src/database/firestore");
 const app = express();
 app.disable("x-powered-by");
 // Vercel (and most hosts) sit behind a proxy: needed so rate limiting sees the real client IP, not the proxy's.
@@ -26,7 +27,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10kb" }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100, standardHeaders: "draft-8", legacyHeaders: false }));
-app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+// Liveness probe. "firebase" says whether the Admin SDK initialised (no details, never any secrets).
+app.get("/api/health", (req, res) => res.json({ status: "ok", firebase: getFirebaseStatus() }));
 app.use("/api/products", productsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/reviews", reviewsRouter);

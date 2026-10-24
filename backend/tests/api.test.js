@@ -45,7 +45,7 @@ const fakeDb = {
   }),
 };
 const dbPath = path.resolve(__dirname, "../src/database/firestore.js");
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { db: fakeDb } };
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { db: fakeDb, getFirebaseStatus: () => "ready" } };
 
 // ---- fake Cloudinary upload
 const { v2: cloudinary } = require("cloudinary");
