@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node tests/credentials.test.js && node tests/logic.test.js && node --test tests/api.test.js",
+    "test": "node tests/credentials.test.js && node --test tests/entrypoint.test.js && node tests/logic.test.js && node --test tests/api.test.js",
+    "test:entrypoint": "node --test tests/entrypoint.test.js",
     "test:logic": "node tests/logic.test.js",
     "test:credentials": "node tests/credentials.test.js"
   },
