@@ -16,9 +16,6 @@ const adminReviewsRouter = require("./src/routes/adminReviews");
 const requireAdmin = require("./src/auth/adminAuth");
 const { getFirebaseStatus } = require("./src/database/firestore");
 const app = express();
-app.use(cors({
-  origin: ['https://mata-store-new-4wse.vercel.app', 'http://localhost:5173'],
-}));
 app.disable("x-powered-by");
 // Vercel (and most hosts) sit behind a proxy: needed so rate limiting sees the real client IP, not the proxy's.
 app.set("trust proxy", 1);

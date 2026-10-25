@@ -7,7 +7,7 @@ const path = require("node:path");
 
 process.env.PORT = "3999";
 process.env.ADMIN_UIDS = "admin1";
-process.env.FRONTEND_ORIGIN = "http://localhost:5173";
+process.env.FRONTEND_ORIGIN = "http://localhost:5173,https://mata-store-new-4wse.vercel.app";
 process.env.CLOUDINARY_CLOUD_NAME = "demo";
 process.env.CLOUDINARY_API_KEY = "key";
 process.env.CLOUDINARY_API_SECRET = "secret";
@@ -69,6 +69,24 @@ const validProduct = () => ({
 const form = (buf, type, name = "a.png") => { const f = new FormData(); f.append("image", new Blob([buf], { type }), name); return f; };
 
 test("server up", async () => { await new Promise((r) => setTimeout(r, 300)); const r = await fetch(`${BASE}/api/health`); assert.equal(r.status, 200); });
+
+test("CORS: Vercel origin is allowed for API requests and preflight", async () => {
+  const origin = "https://mata-store-new-4wse.vercel.app";
+  const response = await fetch(`${BASE}/api/health`, { headers: { Origin: origin } });
+  assert.equal(response.headers.get("access-control-allow-origin"), origin);
+
+  const preflight = await fetch(`${BASE}/api/orders`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization,content-type",
+    },
+  });
+  assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+  assert.match(preflight.headers.get("access-control-allow-methods"), /POST/);
+  assert.match(preflight.headers.get("access-control-allow-headers"), /Authorization/i);
+});
 
 test("upload: no token -> 401", async () => { const r = await fetch(`${BASE}/api/admin/upload`, { method: "POST", body: form(PNG, "image/png") }); assert.equal(r.status, 401); });
 test("upload: non-admin -> 403", async () => { const r = await fetch(`${BASE}/api/admin/upload`, { method: "POST", headers: { Authorization: "Bearer user-token" }, body: form(PNG, "image/png") }); assert.equal(r.status, 403); });

@@ -1,83 +1,102 @@
-# MATA Store on Vercel
+# Deploy MATA Store as one Vercel project
 
-## Architecture (one Vercel project)
+## Architecture
 
-- `frontend/` (Vite) is built to static files: `frontend/dist`.
-- `api/index.js` is the only Vercel Function. It exports the Express app from `backend/app.js`.
-- `vercel.json` sends every `/api/*` request to that function and serves the storefront and `/admin` from the static build.
-- Plain CommonJS, no `services` block, no framework auto-detection for the backend. Vercel traces the files the function requires and runs them as written.
-- Uploads go from the browser straight to Cloudinary (signed by `/api/admin/upload/sign`), so Vercel's ~4.5 MB request-body limit does not apply.
+- Connect the repository root as **one** Vercel project.
+- Vercel builds the React/Vite app from `frontend/` into `frontend/dist`.
+- `api/index.js` exports the existing Express app in `backend/app.js` as one Vercel Function. The `/api/*` rewrite sends API requests to it; other paths fall back to the Vite app for routes such as `/admin`.
+- Frontend API calls use relative `/api/...` URLs, so the browser talks to the frontend and API on the same domain. No separate backend host or frontend API URL is needed.
+- Firestore is the existing persistent external database; no database migration is needed. Product and site data continue to use Firebase Admin/Firestore.
+- Image/video uploads use Cloudinary. The admin API signs uploads and the browser sends files directly to Cloudinary, not to Vercel's temporary filesystem or function request body.
 
-## Vercel project settings (Settings -> General / Build & Development)
+## Vercel project settings
+
+Create or connect **one** Vercel project for this repository:
 
 | Setting | Value |
 |---|---|
-| Framework Preset | **Other** |
-| Root Directory | *(empty - repository root)* |
-| Install Command | leave default (taken from `vercel.json`: `cd backend && npm ci && cd ../frontend && npm ci`) |
-| Build Command | leave default (`cd frontend && npm run build`) |
-| Output Directory | leave default (`frontend/dist`) |
+| Root Directory | Repository root (`.`); do not select `frontend/` or `backend/` |
+| Framework Preset | Other |
+| Install Command | `npm run install:all` |
+| Build Command | `npm run build` |
+| Output Directory | `frontend/dist` |
 | Node.js Version | 22.x |
 
-If any of these were overridden in the dashboard earlier (especially Root Directory = `backend` or `frontend`, or a Framework Preset of Express/Vite), clear or fix them. Dashboard overrides win over `vercel.json`.
+These commands and the output directory are also configured in `vercel.json`. Keep the project root at the repository root so Vercel can see `api/index.js`, both package manifests, and the frontend build output.
 
-## Environment variables (Settings -> Environment Variables)
+## Environment variables
 
-Set for **Production** and **Preview**, then **redeploy** (a change only applies to new deployments).
+Add variables in **Project Settings → Environment Variables** for Production and Preview, then redeploy. Do not commit `.env` files or service-account credentials.
 
-Backend (server-only, never prefix with `VITE_`):
+### Backend (server-only)
 
-| Name | Required | Notes |
+Configure one Firebase Admin credential option:
+
+| Name | Required | Value |
 |---|---|---|
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | yes (Option A) | The whole service-account JSON, raw or base64-encoded. |
-| `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` | alternative (Option B) | Use instead of Option A. Keep `\n` line breaks in the key. Optional `FIREBASE_PROJECT_ID`. |
-| `ADMIN_UIDS` | yes | Comma-separated Firebase Auth UIDs allowed into `/admin`. |
-| `FRONTEND_ORIGIN` | yes | `https://mata-store-new.vercel.app` (comma-separate extra origins, e.g. a custom domain). |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | yes | Image/video uploads. |
-| `MAX_VIDEO_UPLOAD_MB` | no | Default 50, hard cap 100. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes, recommended | Complete Firebase service-account JSON as one line. |
+| `FIREBASE_CLIENT_EMAIL` | Alternative | Service-account client email; use with `FIREBASE_PRIVATE_KEY`. |
+| `FIREBASE_PRIVATE_KEY` | Alternative | Service-account private key; keep escaped `\n` line breaks intact. |
+| `FIREBASE_PROJECT_ID` | Optional | Firebase project ID when using the separate credential fields. |
+| `ADMIN_UIDS` | Yes | Comma-separated Firebase Auth UIDs permitted to access the admin API. |
+| `CLOUDINARY_CLOUD_NAME` | Yes for uploads | Cloudinary cloud name. |
+| `CLOUDINARY_API_KEY` | Yes for uploads | Cloudinary API key. |
+| `CLOUDINARY_API_SECRET` | Yes for uploads | Cloudinary API secret; keep server-side only. |
+| `FRONTEND_ORIGIN` | Optional | Exact frontend origin, e.g. `https://mata-store-new-4wse.vercel.app`. Separate additional origins with commas. Same-origin frontend requests do not require CORS. |
+| `MAX_VIDEO_UPLOAD_MB` | Optional | Maximum video size in MB (default 50; hard cap 100). |
 
-Frontend (public identifiers, baked in at build time):
+`GOOGLE_APPLICATION_CREDENTIALS` is for local development only and should not be used on Vercel.
+
+### Frontend (public Firebase web-app configuration)
+
+Add the Firebase web app values as Vercel environment variables for Production and Preview. They are embedded into the frontend build and are public identifiers, not server secrets.
 
 | Name | Required |
 |---|---|
-| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` | yes |
-| `VITE_API_URL` | leave **unset/empty** (frontend and API share one domain) |
+| `VITE_FIREBASE_API_KEY` | Yes |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Yes |
+| `VITE_FIREBASE_PROJECT_ID` | Yes |
+| `VITE_FIREBASE_APP_ID` | Yes |
 
-`GOOGLE_APPLICATION_CREDENTIALS` is for local development only. It does not work on Vercel.
+Do not set `VITE_API_URL`: all API requests use relative `/api` paths. Changes to `VITE_*` variables require a new deployment because Vite reads them at build time.
 
-## Deploying without the `git` command in PowerShell
+## Deploy
 
-Option 1 - VS Code Source Control:
-1. Copy the files from the repaired ZIP over your project folder (keep your existing `.git` folder; the ZIP has none). Do not copy any `.env` file anywhere.
-2. VS Code -> Source Control. Review the changes, type a message such as `Fix Vercel deployment`, click **Commit**, then **Sync Changes** / **Push**.
+1. Push the repository to GitHub.
+2. In Vercel, import that repository and create a single project with the settings above.
+3. Add the environment variables for both Production and Preview.
+4. Deploy. If the repository is already connected, push the changes and wait for the new deployment to become **Ready**.
 
-Option 2 - GitHub in the browser: open the repository on github.com -> **Add file -> Upload files**, drag the changed files (keep folder structure; `api/index.js` must be in an `api` folder at the repo root) and commit to `main`. Then delete `backend/src/routes/products.js` on GitHub (open the file -> "..." -> Delete file).
+## Verify
 
-Vercel deploys automatically on push to the connected branch.
+Use the same deployment domain for each check:
 
-## Verify after deploying
+1. `https://<your-domain>/` loads the storefront.
+2. `https://<your-domain>/api/health` returns JSON with `"status":"ok"` and `"firebase":"ready"`.
+3. `https://<your-domain>/api/products` returns JSON with a `products` array (an empty array is valid if no active products exist).
+4. Add a product to the cart and place a test order to exercise checkout and the orders API.
+5. Open `https://<your-domain>/admin`, sign in with an allowed Firebase account, and verify products and orders load.
+6. In the Admin Dashboard, upload a test image and confirm it is stored at a Cloudinary URL.
 
-1. Vercel -> Deployments -> latest -> status **Ready**. In **Build Logs**, both `npm ci` runs and `vite build` must succeed.
-2. `https://mata-store-new.vercel.app/api/health` -> `{"status":"ok","firebase":"ready"}`.
-   - `"firebase":"misconfigured"` means the Firebase variable is missing, empty, set for the wrong environment, or invalid; fix it and redeploy. (Runtime Logs show the reason, never the value.)
-3. `https://mata-store-new.vercel.app/api/products` -> `{"products":[ ... ]}` (an empty list is valid if no product is active).
-4. Open the storefront, add a product to the cart, check shipping (free at a merchandise subtotal of 1000 EGP or more).
-5. Open `/admin`, sign in with an admin account, confirm products/orders load.
-
-If `/api/health` itself returns a Vercel error page, open Deployments -> Runtime Logs and read the first error.
+If `/api/health` reports `"firebase":"misconfigured"`, review the Firebase Admin credentials and redeploy. If the API returns a Vercel error page, check that the project Root Directory is the repository root and inspect the deployment's Function runtime logs.
 
 ## Local development
 
-```
+From the repository root:
+
+```sh
 npm run install:all
-cd backend && cp .env.example .env   # fill in values; .env is git-ignored
-npm run dev:backend                  # API on :3000
-npm run dev:frontend                 # Vite on :5173, proxies /api to :3000
-npm test                             # backend tests
 ```
 
-## Security notes
+Copy `backend/.env.example` to `backend/.env` and fill in local credentials. Then run the backend and frontend in separate terminals:
 
-- Never commit `.env`, service-account JSON files, or private keys. `.gitignore` already excludes them.
-- The admin API fails closed: a missing/invalid Firebase configuration returns 401, never access.
-- If a `.env` file containing a Cloudinary secret was ever shared (for example inside a ZIP), rotate that secret in the Cloudinary console and update `CLOUDINARY_API_SECRET` in Vercel.
+```sh
+npm run dev:backend
+npm run dev:frontend
+```
+
+Vite proxies local `/api` requests to the backend on port 3000. To run the backend checks:
+
+```sh
+npm test
+```
