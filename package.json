@@ -1,9 +1,8 @@
-
 {
   "name": "mata-store",
   "private": true,
   "version": "1.0.0",
-  "description": "MATA Store. Vite frontend and Express API deployed with Vercel.",
+  "description": "MATA Store: Vite frontend and Express API deployed as a Vercel Function.",
   "scripts": {
     "install:all": "npm ci --prefix backend && npm ci --prefix frontend",
     "build": "npm run build --prefix frontend",

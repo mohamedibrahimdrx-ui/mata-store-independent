@@ -1,11 +1,9 @@
-
 node_modules/
-**/node_modules/
-dist/
-**/dist/
 .env
 .env.*
 !.env.example
 .vercel/
-service-account*.json
-firebase-adminsdk*.json
+dist/
+coverage/
+serviceAccountKey.json
+*-service-account*.json

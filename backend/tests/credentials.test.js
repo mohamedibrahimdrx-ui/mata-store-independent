@@ -22,18 +22,9 @@ test("JSON whose private key has literal backslash-n sequences is repaired", () 
   const c = loadFirebaseCredentials({ FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({ ...sa, private_key: FAKE_KEY.replace(/\n/g, "\\n") }) });
   assert.equal(c.privateKey, FAKE_KEY);
 });
-test("service account fields are shaped correctly for firebase-admin cert()", () => {
+test("separate variables, with escaped newlines in the key", () => {
   const c = loadFirebaseCredentials({ FIREBASE_PROJECT_ID: "p1", FIREBASE_CLIENT_EMAIL: sa.client_email, FIREBASE_PRIVATE_KEY: FAKE_KEY.replace(/\n/g, "\\n") });
   assert.deepEqual(c, { projectId: "p1", clientEmail: sa.client_email, privateKey: FAKE_KEY });
-  assert.deepEqual({
-    project_id: c.projectId,
-    client_email: c.clientEmail,
-    private_key: c.privateKey,
-  }, {
-    project_id: "p1",
-    client_email: sa.client_email,
-    private_key: FAKE_KEY,
-  });
 });
 test("FIREBASE_PROJECT_ID overrides project_id in the JSON", () => {
   assert.equal(loadFirebaseCredentials({ FIREBASE_PROJECT_ID: "other", FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }).projectId, "other");
