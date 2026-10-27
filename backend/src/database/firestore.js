@@ -17,8 +17,15 @@ function createApp() {
     // instead of the late, confusing "Could not load the default credentials".
     throw new Error("Firebase credentials are missing. Set FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY) in the Vercel project's environment variables, then redeploy.");
   }
+
+  const serviceAccount = credentials ? {
+    project_id: credentials.projectId || resolveProjectId(),
+    client_email: credentials.clientEmail,
+    private_key: credentials.privateKey,
+  } : null;
+
   return initializeApp({
-    credential: credentials ? cert(credentials) : applicationDefault(),
+    credential: serviceAccount ? cert(serviceAccount) : applicationDefault(),
     projectId: credentials ? credentials.projectId : resolveProjectId(),
   });
 }
